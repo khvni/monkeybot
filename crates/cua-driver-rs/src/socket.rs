@@ -4,15 +4,20 @@ use std::sync::Arc;
 
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::UnixListener;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Semaphore};
 
 use crate::cua::CuaExecutor;
 use crate::safety::{detect_active_app, SafetyGuard};
 use crate::types::{
     AllowlistPayload, ConfirmationPayload, CuaAction, DriverMessage, DriverResponse, MessageType,
+    ScreenshotPayload,
 };
 
 const DEFAULT_SOCKET_PATH: &str = "/tmp/monkeybot-cua-driver.sock";
+
+/// Maximum number of concurrent client connections the server will handle.
+/// Beyond this limit, new connections block until a slot opens.
+const MAX_CONCURRENT_CONNECTIONS: usize = 64;
 
 /// Unix socket server that listens for NDJSON commands from the TypeScript
 /// orchestration layer and dispatches them to the CUA executor / safety guard.
@@ -24,6 +29,10 @@ pub struct SocketServer {
     /// Stored here (rather than inside `SafetyGuard`) so the socket handler
     /// can look them up across connections.
     pending_confirmations: Arc<Mutex<HashMap<String, CuaAction>>>,
+    /// Bounds the number of concurrently active connection tasks so that a
+    /// flood of clients cannot exhaust the runtime's task budget or starve
+    /// the accept loop.
+    conn_semaphore: Arc<Semaphore>,
 }
 
 impl SocketServer {
@@ -35,6 +44,7 @@ impl SocketServer {
             executor: Arc::new(Mutex::new(CuaExecutor::new(Arc::clone(&kill_switch)))),
             safety: Arc::new(Mutex::new(SafetyGuard::new(Arc::clone(&kill_switch)))),
             pending_confirmations: Arc::new(Mutex::new(HashMap::new())),
+            conn_semaphore: Arc::new(Semaphore::new(MAX_CONCURRENT_CONNECTIONS)),
         }
     }
 
@@ -59,8 +69,20 @@ impl SocketServer {
             let executor = Arc::clone(&self.executor);
             let safety = Arc::clone(&self.safety);
             let pending = Arc::clone(&self.pending_confirmations);
+            let sem = Arc::clone(&self.conn_semaphore);
 
             tokio::spawn(async move {
+                // Acquire a semaphore permit *inside* the spawned task so the
+                // accept loop is never blocked. If all permits are taken the
+                // task simply waits here until a slot frees up.
+                let _permit = match sem.acquire().await {
+                    Ok(p) => p,
+                    Err(_) => {
+                        tracing::error!("Connection semaphore closed");
+                        return;
+                    }
+                };
+
                 let (reader, mut writer) = stream.into_split();
                 let mut reader = BufReader::new(reader);
                 let mut line = String::new();
@@ -87,6 +109,7 @@ impl SocketServer {
                         }
                     }
                 }
+                // `_permit` is dropped here, releasing the slot.
             });
         }
     }
@@ -121,22 +144,31 @@ async fn handle_message(
         MessageType::ExecuteAction => handle_execute(msg, executor, safety, pending).await,
 
         // ---------------------------------------------------------------
-        // Screenshot
+        // Screenshot (with optional SOM metadata)
         // ---------------------------------------------------------------
-        MessageType::Screenshot => match executor.lock().await.screenshot().await {
-            Ok(data) => DriverResponse {
-                id: msg.id,
-                success: true,
-                data: Some(data),
-                error: None,
-            },
-            Err(e) => DriverResponse {
-                id: msg.id,
-                success: false,
-                data: None,
-                error: Some(e),
-            },
-        },
+        MessageType::Screenshot => {
+            let include_som = msg
+                .payload
+                .as_ref()
+                .and_then(|p| serde_json::from_value::<ScreenshotPayload>(p.clone()).ok())
+                .map(|sp| sp.include_som)
+                .unwrap_or(true);
+
+            match executor.lock().await.screenshot(include_som).await {
+                Ok(data) => DriverResponse {
+                    id: msg.id,
+                    success: true,
+                    data: Some(data),
+                    error: None,
+                },
+                Err(e) => DriverResponse {
+                    id: msg.id,
+                    success: false,
+                    data: None,
+                    error: Some(e),
+                },
+            }
+        }
 
         // ---------------------------------------------------------------
         // Kill switch — immediately halt everything

@@ -4,7 +4,7 @@ use std::sync::Arc;
 use base64::Engine;
 use enigo::{Axis, Button, Coordinate, Direction, Enigo, Keyboard, Mouse, Settings};
 
-use crate::types::{ActionType, CuaAction, MouseButton, ScrollDirection};
+use crate::types::{ActionType, CuaAction, MouseButton, ScreenshotResponse, ScrollDirection, SomElement};
 
 /// CUA (Computer Use Agent) execution layer.
 ///
@@ -61,13 +61,13 @@ impl CuaExecutor {
     }
 
     /// Capture a screenshot of the primary monitor.
-    /// Returns a JSON value with base64-encoded PNG, dimensions, and size.
-    pub async fn screenshot(&self) -> Result<serde_json::Value, String> {
+    /// Returns a JSON value with base64-encoded PNG, dimensions, SOM metadata, and size.
+    pub async fn screenshot(&self, include_som: bool) -> Result<serde_json::Value, String> {
         if !self.active {
             return Err("CUA executor not initialized".into());
         }
 
-        tokio::task::spawn_blocking(screenshot_sync)
+        tokio::task::spawn_blocking(move || screenshot_sync(include_som))
             .await
             .map_err(|e| format!("Task join error: {e}"))?
     }
@@ -249,19 +249,186 @@ fn execute_sync(
 // Screenshot capture (platform-native tools)
 // ---------------------------------------------------------------------------
 
-fn screenshot_sync() -> Result<serde_json::Value, String> {
+fn screenshot_sync(include_som: bool) -> Result<serde_json::Value, String> {
     let png_bytes = capture_screen_png()?;
     let b64 = base64::engine::general_purpose::STANDARD.encode(&png_bytes);
     let size = png_bytes.len();
     let (width, height) = parse_png_dimensions(&png_bytes).unwrap_or((0, 0));
 
-    Ok(serde_json::json!({
-        "image": b64,
-        "width": width,
-        "height": height,
-        "format": "png",
-        "size_bytes": size,
-    }))
+    let (som_elements, som_source) = if include_som {
+        collect_som_elements()
+    } else {
+        (Vec::new(), "none".to_string())
+    };
+
+    let resp = ScreenshotResponse {
+        image: b64,
+        width,
+        height,
+        format: "png".to_string(),
+        size_bytes: size,
+        som_elements,
+        som_source,
+    };
+
+    serde_json::to_value(&resp).map_err(|e| format!("Failed to serialize screenshot: {e}"))
+}
+
+// ---------------------------------------------------------------------------
+// Set-of-Mark (SOM) collection — platform-native accessibility tree readers
+// ---------------------------------------------------------------------------
+
+fn collect_som_elements() -> (Vec<SomElement>, String) {
+    #[cfg(target_os = "linux")]
+    {
+        collect_som_linux()
+    }
+    #[cfg(target_os = "macos")]
+    {
+        collect_som_macos()
+    }
+    #[cfg(not(any(target_os = "linux", target_os = "macos")))]
+    {
+        (Vec::new(), "none".to_string())
+    }
+}
+
+/// Linux SOM: use `xdotool` + `xprop` to enumerate visible windows and
+/// their basic properties as SOM elements.
+#[cfg(target_os = "linux")]
+fn collect_som_linux() -> (Vec<SomElement>, String) {
+    // Get visible window list via wmctrl (provides geometry + title).
+    let output = match std::process::Command::new("wmctrl").args(["-l", "-G"]).output() {
+        Ok(o) if o.status.success() => o,
+        _ => return (Vec::new(), "none".to_string()),
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut elements = Vec::new();
+    let mut id: u32 = 0;
+
+    for line in stdout.lines() {
+        // wmctrl -l -G format: <wid> <desktop> <x> <y> <w> <h> <host> <title...>
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        if parts.len() < 8 {
+            continue;
+        }
+        let x: u32 = parts[2].parse().unwrap_or(0);
+        let y: u32 = parts[3].parse().unwrap_or(0);
+        let w: u32 = parts[4].parse().unwrap_or(0);
+        let h: u32 = parts[5].parse().unwrap_or(0);
+        let title = parts[7..].join(" ");
+
+        if w == 0 || h == 0 {
+            continue;
+        }
+
+        elements.push(SomElement {
+            id,
+            bbox: [x, y, w, h],
+            label: Some(title),
+            role: Some("window".to_string()),
+            center: [x + w / 2, y + h / 2],
+            focused: None,
+        });
+        id += 1;
+    }
+
+    // Try to detect which window is focused to set the `focused` flag.
+    if let Ok(active_out) = std::process::Command::new("xdotool")
+        .args(["getactivewindow", "getwindowname"])
+        .output()
+    {
+        let active_name = String::from_utf8_lossy(&active_out.stdout).trim().to_string();
+        for elem in &mut elements {
+            if elem.label.as_deref() == Some(&active_name) {
+                elem.focused = Some(true);
+            }
+        }
+    }
+
+    let source = if elements.is_empty() {
+        "none"
+    } else {
+        "window_list"
+    };
+    (elements, source.to_string())
+}
+
+/// macOS SOM: use AppleScript to enumerate visible windows with bounds.
+#[cfg(target_os = "macos")]
+fn collect_som_macos() -> (Vec<SomElement>, String) {
+    let script = r#"
+tell application "System Events"
+    set output to ""
+    repeat with proc in (application processes whose visible is true)
+        set appName to name of proc
+        set isFront to (frontmost of proc)
+        try
+            repeat with win in windows of proc
+                set {x1, y1} to position of win
+                set {w1, h1} to size of win
+                set winTitle to name of win
+                set output to output & appName & "|" & winTitle & "|" & x1 & "|" & y1 & "|" & w1 & "|" & h1 & "|" & isFront & linefeed
+            end repeat
+        end try
+    end repeat
+    return output
+end tell
+"#;
+
+    let output = match std::process::Command::new("osascript")
+        .args(["-e", script])
+        .output()
+    {
+        Ok(o) if o.status.success() => o,
+        _ => return (Vec::new(), "none".to_string()),
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let mut elements = Vec::new();
+    let mut id: u32 = 0;
+
+    for line in stdout.lines() {
+        let parts: Vec<&str> = line.split('|').collect();
+        if parts.len() < 7 {
+            continue;
+        }
+        let app_name = parts[0];
+        let win_title = parts[1];
+        let x: u32 = parts[2].trim().parse().unwrap_or(0);
+        let y: u32 = parts[3].trim().parse().unwrap_or(0);
+        let w: u32 = parts[4].trim().parse().unwrap_or(0);
+        let h: u32 = parts[5].trim().parse().unwrap_or(0);
+        let is_front = parts[6].trim() == "true";
+
+        if w == 0 || h == 0 {
+            continue;
+        }
+
+        let label = if win_title.is_empty() {
+            app_name.to_string()
+        } else {
+            format!("{app_name} — {win_title}")
+        };
+
+        elements.push(SomElement {
+            id,
+            bbox: [x, y, w, h],
+            label: Some(label),
+            role: Some("window".to_string()),
+            center: [x + w / 2, y + h / 2],
+            focused: Some(is_front),
+        });
+        id += 1;
+    }
+
+    let source = if elements.is_empty() {
+        "none"
+    } else {
+        "accessibility_tree"
+    };
+    (elements, source.to_string())
 }
 
 #[cfg(target_os = "linux")]
@@ -318,7 +485,80 @@ fn capture_screen_png() -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-#[cfg(not(any(target_os = "linux", target_os = "macos")))]
+#[cfg(target_os = "windows")]
+fn capture_screen_png() -> Result<Vec<u8>, String> {
+    // PowerShell one-liner using .NET's Screen/Graphics classes.
+    // Captures the primary screen to a temporary PNG file and reads it back.
+    let tmp = format!(
+        "{}\\monkeybot-screenshot-{}.png",
+        std::env::temp_dir().display(),
+        uuid::Uuid::new_v4()
+    );
+    let ps_script = format!(
+        r#"Add-Type -AssemblyName System.Windows.Forms,System.Drawing;
+$b = New-Object Drawing.Bitmap([Windows.Forms.Screen]::PrimaryScreen.Bounds.Width,[Windows.Forms.Screen]::PrimaryScreen.Bounds.Height);
+$g = [Drawing.Graphics]::FromImage($b);
+$g.CopyFromScreen(0,0,0,0,$b.Size);
+$b.Save('{tmp}','Png');
+$g.Dispose();$b.Dispose();"#
+    );
+    let output = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-Command", &ps_script])
+        .output()
+        .map_err(|e| format!("powershell screenshot failed: {e}"))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!("powershell screenshot returned non-zero: {stderr}"));
+    }
+
+    let bytes =
+        std::fs::read(&tmp).map_err(|e| format!("Failed to read screenshot file: {e}"))?;
+    let _ = std::fs::remove_file(&tmp);
+    Ok(bytes)
+}
+
+#[cfg(target_os = "android")]
+fn capture_screen_png() -> Result<Vec<u8>, String> {
+    // `screencap` writes PNG to stdout on Android.
+    if let Ok(output) = std::process::Command::new("screencap")
+        .args(["-p"])
+        .output()
+    {
+        if output.status.success() && !output.stdout.is_empty() {
+            return Ok(output.stdout);
+        }
+    }
+
+    // Fallback: adb-based capture (useful when running inside a host that
+    // controls an Android device/emulator).
+    let tmp = "/data/local/tmp/monkeybot-screenshot.png";
+    if let Ok(output) = std::process::Command::new("adb")
+        .args(["shell", "screencap", "-p", tmp])
+        .output()
+    {
+        if output.status.success() {
+            if let Ok(pull) = std::process::Command::new("adb")
+                .args(["pull", tmp, "/tmp/monkeybot-android-screenshot.png"])
+                .output()
+            {
+                if pull.status.success() {
+                    if let Ok(bytes) = std::fs::read("/tmp/monkeybot-android-screenshot.png") {
+                        let _ = std::fs::remove_file("/tmp/monkeybot-android-screenshot.png");
+                        let _ = std::process::Command::new("adb")
+                            .args(["shell", "rm", tmp])
+                            .output();
+                        return Ok(bytes);
+                    }
+                }
+            }
+        }
+    }
+
+    Err("No screenshot tool available on Android. Ensure `screencap` or `adb` is accessible.".into())
+}
+
+#[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows", target_os = "android")))]
 fn capture_screen_png() -> Result<Vec<u8>, String> {
     Err("Screenshot capture is not supported on this platform".into())
 }

@@ -108,3 +108,60 @@ pub struct ConfirmationRequest {
     pub description: String,
     pub risk_level: String,
 }
+
+// ---------------------------------------------------------------------------
+// Set-of-Mark (SOM) metadata for visual grounding
+// ---------------------------------------------------------------------------
+
+/// A single UI element detected in a screenshot, used for visual grounding.
+/// The orchestrator uses these marks to map high-level actions (e.g. "click
+/// the Submit button") to pixel coordinates.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SomElement {
+    /// Unique numeric ID for this element within the screenshot.
+    pub id: u32,
+    /// Bounding box in screen coordinates: [x, y, width, height].
+    pub bbox: [u32; 4],
+    /// Human-readable label (e.g. "Submit", "File menu", "Search field").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// Element role/type from the accessibility tree (e.g. "button", "textfield").
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<String>,
+    /// Center point for click targeting: [x, y].
+    pub center: [u32; 2],
+    /// Whether the element is currently focused.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub focused: Option<bool>,
+}
+
+/// Full screenshot response with optional SOM annotations.
+#[derive(Debug, Clone, Serialize)]
+pub struct ScreenshotResponse {
+    pub image: String,
+    pub width: u32,
+    pub height: u32,
+    pub format: String,
+    pub size_bytes: usize,
+    /// Set-of-Mark elements detected in the screenshot.
+    /// Empty when SOM detection is unavailable or disabled.
+    pub som_elements: Vec<SomElement>,
+    /// Source of SOM data (e.g. "accessibility_tree", "none").
+    pub som_source: String,
+}
+
+/// Payload for the `screenshot` message type (optional parameters).
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct ScreenshotPayload {
+    /// Whether to include SOM metadata in the response.
+    #[serde(default = "default_true")]
+    pub include_som: bool,
+    /// Specific window ID to capture (None = full screen).
+    #[serde(default)]
+    pub window_id: Option<u64>,
+}
+
+fn default_true() -> bool {
+    true
+}
