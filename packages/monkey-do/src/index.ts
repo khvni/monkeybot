@@ -6,12 +6,20 @@
  * and ACP dispatching for multi-agent orchestration.
  */
 
+import type { Recording, CapturedEvent } from "@monkeybot/monkey-see";
+import type { VoiceIntent } from "@monkeybot/monkey-say";
+
+export type { Recording, CapturedEvent } from "@monkeybot/monkey-see";
+export type { VoiceIntent, VoiceSession } from "@monkeybot/monkey-say";
+
 export interface AgentAction {
   /** Unique identifier for the action. */
   id: string;
   type: "click" | "type" | "scroll" | "hotkey" | "shell" | "file_edit";
   /** Human-readable description of what this action does. */
   description: string;
+  /** The captured event this action was derived from, if any. */
+  sourceEvent?: CapturedEvent;
 }
 
 export interface Skill {
@@ -19,8 +27,8 @@ export interface Skill {
   id: string;
   name: string;
   actions: AgentAction[];
-  /** The recording ID this skill was derived from, if any. */
-  sourceRecordingId?: string;
+  /** The recording this skill was derived from, if any. */
+  sourceRecording?: Recording;
 }
 
 export interface AgentRun {
@@ -29,4 +37,6 @@ export interface AgentRun {
   status: "pending" | "running" | "completed" | "failed";
   startedAt: number;
   completedAt?: number;
+  /** Voice directive that triggered this run, if any. */
+  voiceDirective?: VoiceIntent;
 }
