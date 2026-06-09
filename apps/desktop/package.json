@@ -1,0 +1,27 @@
+{
+  "name": "@monkeybot/desktop",
+  "version": "0.1.0",
+  "description": "Electron menu bar app with push-to-talk voice input and text input for monkeybot.",
+  "private": true,
+  "type": "module",
+  "main": "dist/main/index.js",
+  "scripts": {
+    "build": "tsc --build",
+    "dev": "electron .",
+    "clean": "rm -rf dist out",
+    "lint": "tsc --noEmit",
+    "test": "echo 'No tests yet'"
+  },
+  "dependencies": {
+    "@monkeybot/monkey-say": "workspace:*",
+    "@monkeybot/monkey-see": "workspace:*",
+    "@monkeybot/monkey-do": "workspace:*",
+    "@monkeybot/orchestrator": "workspace:*",
+    "@monkeybot/storage": "workspace:*",
+    "@monkeybot/safety": "workspace:*",
+    "electron": "^33.0.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}
