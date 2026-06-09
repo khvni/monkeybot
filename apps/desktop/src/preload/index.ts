@@ -13,6 +13,8 @@ contextBridge.exposeInMainWorld("monkeybot", {
 
   checkOnboarding: () => ipcRenderer.invoke("check-onboarding"),
 
+  getApiKeys: () => ipcRenderer.invoke("get-api-keys"),
+
   // Messaging
   sendMessage: (message: string) => ipcRenderer.invoke("send-message", message),
 
@@ -23,7 +25,13 @@ contextBridge.exposeInMainWorld("monkeybot", {
   // Safety
   triggerKillSwitch: () => ipcRenderer.invoke("trigger-kill-switch"),
 
+  // Driver status
+  getDriverStatus: () => ipcRenderer.invoke("get-driver-status"),
+
   // Events from main process
+  onDriverStatus: (cb: (connected: boolean) => void) => {
+    ipcRenderer.on("driver-status", (_e, connected) => cb(connected));
+  },
   onWatchMeToggle: (cb: (active: boolean) => void) => {
     ipcRenderer.on("watch-me-toggle", (_e, active) => cb(active));
   },

@@ -1,4 +1,4 @@
-import { app, Tray, BrowserWindow, ipcMain, nativeImage } from "electron";
+import { app, Tray, BrowserWindow } from "electron";
 import path from "node:path";
 import { createTray } from "./tray";
 import { registerIpcHandlers } from "./ipc";
@@ -14,6 +14,11 @@ function createWindow(): BrowserWindow {
     frame: false,
     resizable: false,
     skipTaskbar: true,
+    transparent: false,
+    hasShadow: true,
+    vibrancy: "under-window",
+    visualEffectState: "active",
+    backgroundColor: "#1c1c1e",
     webPreferences: {
       preload: path.join(__dirname, "../preload/index.js"),
       contextIsolation: true,
@@ -21,8 +26,14 @@ function createWindow(): BrowserWindow {
     },
   });
 
-  // In production, load the bundled HTML. For now, load the dev file.
   win.loadFile(path.join(__dirname, "../renderer/index.html"));
+
+  // Hide window when focus is lost (menu bar app pattern).
+  win.on("blur", () => {
+    if (!win.webContents.isDevToolsOpened()) {
+      win.hide();
+    }
+  });
 
   return win;
 }
