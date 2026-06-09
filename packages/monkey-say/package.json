@@ -1,0 +1,19 @@
+{
+  "name": "@monkeybot/monkey-say",
+  "version": "0.1.0",
+  "description": "Voice interaction layer — realtime STT (AssemblyAI) and TTS (ElevenLabs) for agent communication.",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit",
+    "test": "echo 'No tests yet'"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "outDir": "dist",
+    "rootDir": "src",
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    "jsx": "react-jsx",
+    "module": "ESNext",
+    "moduleResolution": "bundler"
+  },
+  "include": ["src"],
+  "references": [
+    { "path": "../../packages/monkey-see" },
+    { "path": "../../packages/monkey-say" },
+    { "path": "../../packages/monkey-do" },
+    { "path": "../../packages/orchestrator" },
+    { "path": "../../packages/storage" },
+    { "path": "../../packages/safety" }
+  ]
+}

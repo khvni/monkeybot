@@ -1,24 +1,103 @@
 # monkeybot
 
-A computer-use agent that users can teach by recording themselves performing tasks. 
+A computer-use agent that users can teach by recording themselves performing tasks.
 
 `monkeybot` bridges the gap between manual workflows and autonomous agents by allowing users to "show" the agent what to do through screen recordings, which are then transformed into reproducible, intelligent skills.
 
-## Core Architecture
+## Architecture
 
-The system is built on three pillars:
+### Monorepo Structure (pnpm workspace)
 
-1.  **monkey-see** (`packages/monkey-see`): The recording engine. It captures screen, cursor movements, clicks, and typed input to output structured action data from user demonstrations.
-2.  **monkey-say** (`packages/monkey-say`): The voice interaction layer. Realtime voice-based communication for telling the agent what to do, teaching it tasks, and giving direction in real time.
-3.  **monkey-do** (`packages/monkey-do`): The computer-use-enabled agent harness. This is the heart of the agent, taking direction from both user demonstrations and voice input.
+```
+monkeybot/
+├── apps/
+│   └── desktop/              # Electron menu bar app (push-to-talk + text input)
+├── packages/
+│   ├── monkey-see/           # Recording engine (screen + input capture)
+│   ├── monkey-say/           # Voice layer (AssemblyAI STT, ElevenLabs TTS)
+│   ├── monkey-do/            # Core agent harness (action execution, skill replay)
+│   ├── orchestrator/         # TS ↔ Rust IPC via Unix sockets, OpenRouter model routing
+│   ├── storage/              # SQLite: trajectories, action graphs, NL summaries
+│   └── safety/               # App allowlist, confirmation prompts, kill switch
+├── crates/
+│   └── cua-driver-rs/        # Rust CUA driver daemon (Unix socket server)
+├── pnpm-workspace.yaml
+├── Cargo.toml                # Cargo workspace
+└── tsconfig.json             # Project references root
+```
 
-## Features
+### Core Pillars
 
-- **Voice-First Teaching**: Talk to the agent to guide it or teach it new workflows.
-- **Demonstration Replay**: Record yourself doing a task and let the agent learn and replicate the "skill".
-- **Advanced Computer Use**: Accessibility-based interaction (macOS focus) that allows the cursor to take actions on the screen.
-- **Coding Capabilities**: Performs file editing, terminal commands, and code generation.
-- **Multi-Agent Orchestration**: Can dispatch other agents via the Agent Client Protocol (ACP).
+1. **monkey-see** — Recording engine. Captures screen, cursor movements, clicks, and typed input to output structured action data from user demonstrations.
+2. **monkey-say** — Voice interaction layer. Realtime voice-based communication (AssemblyAI STT, ElevenLabs TTS) for teaching the agent and giving direction.
+3. **monkey-do** — Computer-use agent harness. Executes actions on the screen, replays learned skills, and manages goal-directed execution.
+
+### Execution Layer
+
+- **CUA Driver** (`crates/cua-driver-rs`): Rust daemon using [trycua/cua](https://github.com/trycua/cua) for host-based (not sandboxed) computer-use execution.
+- **IPC**: Newline-delimited JSON over Unix sockets between the Rust driver and TypeScript orchestrator.
+- **Safety**: App allowlist, confirmation prompts for destructive actions, and a kill switch (keyboard shortcut + tray menu).
+
+### Model Routing (OpenRouter)
+
+| Profile     | Model                    | Use Case                              |
+| ----------- | ------------------------ | ------------------------------------- |
+| `fast`      | Gemini 1.5 Flash         | Repetitive inference cycles           |
+| `reasoning` | Claude 3.5 Sonnet        | Complex reasoning and planning        |
+| `fallback`  | GPT-4o                   | General-purpose fallback              |
+
+### Learning Representation (Hybrid)
+
+- **Raw Trajectories**: Timestamped sequences of user actions (clicks, keystrokes, screenshots).
+- **Abstracted Action Graphs**: DAGs derived from trajectories capturing reusable workflow structure.
+- **Natural Language Summaries**: LLM-generated descriptions of workflows for retrieval and search.
+
+### Storage
+
+SQLite (via `better-sqlite3`) for local persistence:
+- Trajectories + steps
+- Action graphs (nodes + edges)
+- NL summaries
+- API key storage (onboarding)
+- App allowlist (safety)
+
+## Getting Started
+
+### Prerequisites
+
+- Node.js ≥ 20
+- pnpm ≥ 9
+- Rust (latest stable)
+
+### Install & Build
+
+```bash
+pnpm install
+pnpm build:packages
+
+# Rust driver
+cargo build --manifest-path crates/cua-driver-rs/Cargo.toml
+```
+
+### Development
+
+```bash
+# Run the Electron app
+pnpm dev
+
+# Type-check the entire workspace
+pnpm typecheck
+
+# Lint
+pnpm lint
+```
+
+### Onboarding
+
+On first launch, the app prompts for API keys:
+- **OpenRouter** (required): For model routing (Gemini Flash, Claude Sonnet, GPT-4o)
+- **AssemblyAI** (optional): For push-to-talk voice input
+- **ElevenLabs** (optional): For text-to-speech responses
 
 ## UX Pattern & Inspiration
 
@@ -27,12 +106,6 @@ The user experience of `monkeybot` is heavily inspired by **[Clicky](https://git
 Other key inspirations include:
 - **Claude for Chrome**: The record-workflow-to-skill-invocation loop.
 - **Codex Computer Use**: Open-ended, generalized computer control.
-
-## Project Structure
-
-- `packages/monkey-see`: Recording and input capture modules.
-- `packages/monkey-say`: Realtime voice interaction and processing.
-- `packages/monkey-do`: Core agent logic, computer use, and coding execution.
 
 ## License
 

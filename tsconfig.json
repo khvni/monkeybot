@@ -1,0 +1,12 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/monkey-see" },
+    { "path": "packages/monkey-say" },
+    { "path": "packages/monkey-do" },
+    { "path": "packages/orchestrator" },
+    { "path": "packages/storage" },
+    { "path": "packages/safety" },
+    { "path": "apps/desktop" }
+  ]
+}

@@ -1,3 +1,29 @@
 node_modules
 dist
 .DS_Store
+*.db
+*.sqlite
+*.sqlite3
+
+# Rust
+target/
+*.swp
+
+# TypeScript build info
+*.tsbuildinfo
+
+# Electron
+out/
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.iml
+
+# OS
+Thumbs.db

@@ -1,0 +1,21 @@
+{
+  "name": "@monkeybot/orchestrator",
+  "version": "0.1.0",
+  "description": "Orchestration layer — connects TypeScript frontend to Rust CUA driver via Unix sockets, routes model requests via OpenRouter.",
+  "private": true,
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --build",
+    "clean": "rm -rf dist",
+    "lint": "tsc --noEmit",
+    "test": "echo 'No tests yet'"
+  },
+  "dependencies": {
+    "@monkeybot/safety": "workspace:*"
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  }
+}
