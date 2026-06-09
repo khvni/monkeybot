@@ -1,3 +1,25 @@
+# dependencies
 node_modules
+
+# build output
 dist
+*.tsbuildinfo
+
+# os
 .DS_Store
+Thumbs.db
+
+# editors
+.vscode
+!.vscode/settings.json
+.idea
+
+# env
+.env
+.env.local
+.env.*.local
+
+# logs
+*.log
+npm-debug.log*
+pnpm-debug.log*

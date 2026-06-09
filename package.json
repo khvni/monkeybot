@@ -1,16 +1,18 @@
 {
   "name": "monkeybot",
   "version": "0.1.0",
-  "description": "A computer-use agent that users can teach by recording themselves performing tasks.",
+  "description": "A computer-use agent that learns by watching you work. See, Say, Do.",
   "private": true,
-  "workspaces": [
-    "packages/*"
-  ],
+  "packageManager": "pnpm@9.15.4",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "pnpm -r run build",
+    "dev": "pnpm -r --parallel run dev",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck",
+    "clean": "pnpm -r run clean"
   },
   "license": "MIT",
   "devDependencies": {
-    "typescript": "^5.0.0"
+    "typescript": "^5.8.0"
   }
 }

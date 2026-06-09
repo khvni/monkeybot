@@ -1,0 +1,16 @@
+{
+  "name": "@monkeybot/monkey-say",
+  "version": "0.1.0",
+  "description": "Realtime voice interaction layer — teaching, direction, and feedback via speech.",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "type": "module",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "dev": "tsc --watch --project tsconfig.json",
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "lint": "echo 'no linter configured yet'",
+    "clean": "rm -rf dist *.tsbuildinfo"
+  },
+  "license": "MIT"
+}
