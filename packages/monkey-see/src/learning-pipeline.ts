@@ -70,15 +70,16 @@ export class LearningPipeline {
    */
   async processSession(session: RecordingSession): Promise<LearningResult> {
     const workflowId = session.workflowId;
-    this.storage.updateWorkflowStatus(workflowId, "processing");
 
-    // Step 1: Generate trajectory from recording
+    // Step 1 & 2: Generate trajectory and graph, persist atomically
     const trajectory = this.trajectoryGenerator.generate(session);
-    this.storage.insertTrajectory(trajectory);
-
-    // Step 2: Build action graph from trajectory
     const graph = this.graphBuilder.build([trajectory]);
-    this.storage.insertActionGraph(graph);
+
+    this.storage.runInTransaction(() => {
+      this.storage.updateWorkflowStatus(workflowId, "processing");
+      this.storage.insertTrajectory(trajectory);
+      this.storage.insertActionGraph(graph);
+    });
 
     // Step 3: Generate NL summaries (with error recovery)
     let workflowSummary: import("@monkeybot/storage").NLSummary;
@@ -87,20 +88,20 @@ export class LearningPipeline {
         trajectory,
         workflowId
       );
-      this.storage.insertNLSummary(trajectorySummary);
-
       const graphSummary = await this.summarizer.summarizeActionGraph(graph, workflowId);
-      this.storage.insertNLSummary(graphSummary);
-
       workflowSummary = await this.summarizer.summarizeWorkflow(
         workflowId,
         [trajectory],
         [graph]
       );
-      this.storage.insertNLSummary(workflowSummary);
+
+      this.storage.runInTransaction(() => {
+        this.storage.insertNLSummary(trajectorySummary);
+        this.storage.insertNLSummary(graphSummary);
+        this.storage.insertNLSummary(workflowSummary);
+        this.storage.updateWorkflowStatus(workflowId, "complete");
+      });
     } catch (err) {
-      // On LLM failure, still mark workflow complete with trajectories/graph saved
-      this.storage.updateWorkflowStatus(workflowId, "complete");
       const fallbackSummary = `Workflow recorded with ${trajectory.steps.length} steps (summary generation failed)`;
       workflowSummary = {
         id: randomUUID(),
@@ -111,7 +112,11 @@ export class LearningPipeline {
         generatedBy: "fallback",
         createdAt: Math.floor(Date.now() / 1000),
       };
-      this.storage.insertNLSummary(workflowSummary);
+
+      this.storage.runInTransaction(() => {
+        this.storage.insertNLSummary(workflowSummary);
+        this.storage.updateWorkflowStatus(workflowId, "complete");
+      });
 
       return {
         workflowId,
@@ -120,9 +125,6 @@ export class LearningPipeline {
         summary: this.summarizer.toResult(workflowSummary),
       };
     }
-
-    // Mark workflow as complete
-    this.storage.updateWorkflowStatus(workflowId, "complete");
 
     return {
       workflowId,
@@ -142,15 +144,15 @@ export class LearningPipeline {
     graphId: string;
   } {
     const workflowId = session.workflowId;
-    this.storage.updateWorkflowStatus(workflowId, "processing");
-
     const trajectory = this.trajectoryGenerator.generate(session);
-    this.storage.insertTrajectory(trajectory);
-
     const graph = this.graphBuilder.build([trajectory]);
-    this.storage.insertActionGraph(graph);
 
-    this.storage.updateWorkflowStatus(workflowId, "complete");
+    this.storage.runInTransaction(() => {
+      this.storage.updateWorkflowStatus(workflowId, "processing");
+      this.storage.insertTrajectory(trajectory);
+      this.storage.insertActionGraph(graph);
+      this.storage.updateWorkflowStatus(workflowId, "complete");
+    });
 
     return {
       workflowId,

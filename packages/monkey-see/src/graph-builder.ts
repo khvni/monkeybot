@@ -16,6 +16,7 @@ export class GraphBuilder {
     const nodes: ActionNode[] = [];
     const edges: ActionEdge[] = [];
     const nodeMap = new Map<string, ActionNode>();
+    const edgeSet = new Set<string>();
 
     for (const trajectory of trajectories) {
       let prevNodeId: string | null = null;
@@ -35,12 +36,10 @@ export class GraphBuilder {
           nodes.push(node);
         }
 
-        // Create edge from previous node to this node
         if (prevNodeId && prevNodeId !== node.id) {
-          const existingEdge = edges.find(
-            (e) => e.from === prevNodeId && e.to === node!.id
-          );
-          if (!existingEdge) {
+          const edgeKey = `${prevNodeId}->${node.id}`;
+          if (!edgeSet.has(edgeKey)) {
+            edgeSet.add(edgeKey);
             edges.push({ from: prevNodeId, to: node.id });
           }
         }

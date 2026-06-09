@@ -19,7 +19,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 export interface StorageManagerOptions {
   dbPath: string;
-  encryptionPassphrase?: string;
+  encryptionPassphrase: string;
 }
 
 /**
@@ -34,7 +34,10 @@ export class StorageManager {
     this.db = new Database(opts.dbPath);
     this.db.pragma("journal_mode = WAL");
     this.db.pragma("foreign_keys = ON");
-    this.passphrase = opts.encryptionPassphrase ?? "monkeybot-default-key";
+    if (!opts.encryptionPassphrase) {
+      throw new Error("encryptionPassphrase is required — do not use a default passphrase");
+    }
+    this.passphrase = opts.encryptionPassphrase;
   }
 
   /** Run the schema migration to create all tables. */
@@ -506,6 +509,19 @@ export class StorageManager {
     // Jaccard-like: intersection / union
     const union = new Set([...queryTokens, ...docTokens]).size;
     return union > 0 ? matches / union : 0;
+  }
+
+  // ============================================================
+  // Transactions
+  // ============================================================
+
+  /**
+   * Execute a function inside a single SQLite transaction.
+   * Automatically rolls back on error.
+   */
+  runInTransaction<T>(fn: () => T): T {
+    const tx = this.db.transaction(fn);
+    return tx();
   }
 
   // ============================================================
