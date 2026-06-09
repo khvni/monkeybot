@@ -12,6 +12,7 @@ export interface TrajectoryStep {
 /** A raw recorded trajectory (sequence of user/agent actions). */
 export interface Trajectory {
   id: string;
+  workflowId?: string;
   name: string;
   steps: TrajectoryStep[];
   createdAt: number;
@@ -36,6 +37,7 @@ export interface ActionEdge {
 /** An abstracted action graph derived from one or more trajectories. */
 export interface ActionGraph {
   id: string;
+  workflowId?: string;
   name: string;
   nodes: ActionNode[];
   edges: ActionEdge[];
@@ -46,9 +48,30 @@ export interface ActionGraph {
 /** A natural language summary of a workflow/skill. */
 export interface NLSummary {
   id: string;
-  targetType: "trajectory" | "action_graph";
+  workflowId?: string;
+  targetType: "trajectory" | "action_graph" | "workflow";
   targetId: string;
   summary: string;
   generatedBy: string;
   createdAt: number;
+}
+
+/** Status of a workflow. */
+export type WorkflowStatus = "draft" | "recording" | "processing" | "complete";
+
+/** A workflow linking trajectories, action graphs, and NL summaries. */
+export interface Workflow {
+  id: string;
+  name: string;
+  description?: string;
+  status: WorkflowStatus;
+  createdAt: number;
+  updatedAt: number;
+}
+
+/** Result of a similarity search against stored workflows. */
+export interface SimilarWorkflow {
+  workflow: Workflow;
+  score: number;
+  matchedSummary: string;
 }
