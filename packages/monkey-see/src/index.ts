@@ -30,6 +30,14 @@ export interface CursorMoveEvent extends RecordingEvent {
   y: number;
 }
 
+export interface ScrollEvent extends RecordingEvent {
+  type: "scroll";
+  x: number;
+  y: number;
+  deltaX: number;
+  deltaY: number;
+}
+
 export interface ScreenshotEvent extends RecordingEvent {
   type: "screenshot";
   /** Base-64 encoded image data or file path. */
@@ -40,6 +48,7 @@ export type CapturedEvent =
   | ClickEvent
   | KeypressEvent
   | CursorMoveEvent
+  | ScrollEvent
   | ScreenshotEvent;
 
 export interface Recording {
