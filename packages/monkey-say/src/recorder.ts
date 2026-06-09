@@ -3,6 +3,7 @@ import type { ChildProcess } from "node:child_process";
 import { platform } from "node:os";
 import { RecordingError } from "./errors";
 import { commandExists } from "./utils";
+import { trackProcess } from "./process-registry";
 import type { RecorderConfig } from "./types";
 
 const DEFAULTS = {
@@ -135,6 +136,7 @@ export class MicrophoneRecorder {
     this.process = spawn(tool.command, tool.args, {
       stdio: ["ignore", "pipe", "ignore"],
     });
+    trackProcess(this.process);
 
     this.process.stdout!.on("data", (chunk: Buffer) => {
       this.chunks.push(chunk);

@@ -3,6 +3,7 @@ export type { TranscriptCallback } from "./assemblyai";
 export { ElevenLabsSynthesizer } from "./elevenlabs";
 export { MicrophoneRecorder } from "./recorder";
 export { AudioPlayer } from "./audio-player";
+export { trackProcess, untrackProcess } from "./process-registry";
 export { VoiceSession } from "./voice-session";
 export {
   VoiceError,

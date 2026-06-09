@@ -6,6 +6,7 @@ import { tmpdir, platform } from "node:os";
 import { randomBytes } from "node:crypto";
 import { PlaybackError } from "./errors";
 import { commandExists } from "./utils";
+import { trackProcess } from "./process-registry";
 
 interface PlaybackTool {
   command: string;
@@ -54,7 +55,7 @@ function tempFilePath(ext: string): string {
 
 export class AudioPlayer {
   private queue: QueueItem[] = [];
-  private processing = false;
+  private runner: Promise<void> | null = null;
   private currentProcess: ChildProcess | null = null;
   private playbackTool: PlaybackTool | null = null;
 
@@ -69,9 +70,7 @@ export class AudioPlayer {
   enqueue(audio: Buffer, format = "mp3"): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       this.queue.push({ audio, format, resolve, reject });
-      if (!this.processing) {
-        void this.processQueue();
-      }
+      this.ensureRunning();
     });
   }
 
@@ -84,7 +83,6 @@ export class AudioPlayer {
     for (const item of pending) {
       item.reject(new PlaybackError("Playback stopped."));
     }
-    this.processing = false;
   }
 
   clear(): void {
@@ -94,10 +92,22 @@ export class AudioPlayer {
     }
   }
 
-  private async processQueue(): Promise<void> {
-    if (this.processing) return;
-    this.processing = true;
+  /**
+   * Guarantee a single drain loop is active. If drain completes and items
+   * were enqueued in the gap between the while-check and runner teardown,
+   * the finally block re-checks and restarts.
+   */
+  private ensureRunning(): void {
+    if (this.runner) return;
+    this.runner = this.drain().finally(() => {
+      this.runner = null;
+      if (this.queue.length > 0) {
+        this.ensureRunning();
+      }
+    });
+  }
 
+  private async drain(): Promise<void> {
     while (this.queue.length > 0) {
       const item = this.queue.shift()!;
       try {
@@ -109,8 +119,6 @@ export class AudioPlayer {
         );
       }
     }
-
-    this.processing = false;
   }
 
   private getPlaybackTool(): PlaybackTool {
@@ -132,6 +140,7 @@ export class AudioPlayer {
           stdio: "ignore",
         });
         this.currentProcess = proc;
+        trackProcess(proc);
 
         proc.on("close", (code, signal) => {
           this.currentProcess = null;
