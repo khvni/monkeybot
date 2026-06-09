@@ -2,7 +2,7 @@
  * Text input component for sending messages to the agent.
  */
 export function createTextInput(
-  onSend: (message: string) => void
+  onSend: (message: string) => Promise<void> | void
 ): HTMLElement {
   const container = document.createElement("div");
   container.className = "input-bar";
@@ -29,7 +29,7 @@ export function createTextInput(
     input.value = "";
 
     try {
-      onSend(message);
+      await onSend(message);
     } finally {
       sending = false;
       sendBtn.disabled = false;

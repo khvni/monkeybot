@@ -128,7 +128,7 @@ export function registerIpcHandlers(window: BrowserWindow): void {
     if (sent) {
       return { response: "Message sent to agent." };
     }
-    return { response: "Driver not connected. Message queued locally." };
+    return { response: "Driver not connected. Message was not sent." };
   });
 
   // Push-to-talk: start recording.

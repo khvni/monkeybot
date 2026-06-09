@@ -51,10 +51,9 @@ export function renderChatView(root: HTMLElement): void {
     messages.scrollTop = messages.scrollHeight;
   }
 
-  // Kill switch
+  // Kill switch (message added by onKillSwitch listener to avoid duplicates)
   const killSwitch = createKillSwitch(async () => {
     await window.monkeybot.triggerKillSwitch();
-    addMessage("⛔ Kill switch activated — agent halted.", "agent");
   });
 
   // Input bar (text + voice)
