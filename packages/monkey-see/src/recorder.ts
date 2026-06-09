@@ -1,4 +1,4 @@
-import { EventCapture } from "./event-capture";
+import { EventCapture, type EventCallback } from "./event-capture";
 import type { RecordingSession, ScreenFrame, CapturedEvent, LearningPipelineConfig } from "./types";
 import { randomUUID } from "node:crypto";
 
@@ -13,6 +13,7 @@ export class ScreenRecorder {
   private frameTimer: ReturnType<typeof setInterval> | null = null;
   private config: LearningPipelineConfig;
   private frameCallback: (() => ScreenFrame | null) | null = null;
+  private eventHandler: EventCallback | null = null;
 
   constructor(config: LearningPipelineConfig) {
     this.config = config;
@@ -52,11 +53,12 @@ export class ScreenRecorder {
     };
 
     // Wire up event capture to session
-    this.eventCapture.onEvent((event: CapturedEvent) => {
+    this.eventHandler = (event: CapturedEvent) => {
       if (this.session) {
         this.session.events.push(event);
       }
-    });
+    };
+    this.eventCapture.onEvent(this.eventHandler);
     this.eventCapture.start();
 
     // Start periodic frame capture
@@ -105,8 +107,12 @@ export class ScreenRecorder {
       this.frameTimer = null;
     }
 
-    // Stop event capture
+    // Stop event capture and remove listener to prevent accumulation
     this.eventCapture.stop();
+    if (this.eventHandler) {
+      this.eventCapture.removeListener(this.eventHandler);
+      this.eventHandler = null;
+    }
 
     this.session.endedAt = Date.now();
     const session = this.session;

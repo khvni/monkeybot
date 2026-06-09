@@ -372,20 +372,21 @@ export class StorageManager {
     const payload = encrypt(apiKey, this.passphrase);
     this.db
       .prepare(
-        "INSERT OR REPLACE INTO api_keys (service, encrypted_key, iv, auth_tag, stored_at) VALUES (?, ?, ?, ?, ?)"
+        "INSERT OR REPLACE INTO api_keys (service, encrypted_key, iv, auth_tag, salt, stored_at) VALUES (?, ?, ?, ?, ?, ?)"
       )
-      .run(service, payload.encrypted, payload.iv, payload.authTag, Math.floor(Date.now() / 1000));
+      .run(service, payload.encrypted, payload.iv, payload.authTag, payload.salt, Math.floor(Date.now() / 1000));
   }
 
   getApiKey(service: string): string | undefined {
     const row = this.db
-      .prepare("SELECT encrypted_key, iv, auth_tag FROM api_keys WHERE service = ?")
-      .get(service) as { encrypted_key: string; iv: string; auth_tag: string } | undefined;
+      .prepare("SELECT encrypted_key, iv, auth_tag, salt FROM api_keys WHERE service = ?")
+      .get(service) as { encrypted_key: string; iv: string; auth_tag: string; salt: string } | undefined;
     if (!row) return undefined;
     return decrypt({
       encrypted: row.encrypted_key,
       iv: row.iv,
       authTag: row.auth_tag,
+      salt: row.salt,
     }, this.passphrase);
   }
 

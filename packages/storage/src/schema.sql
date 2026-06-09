@@ -91,6 +91,7 @@ CREATE TABLE IF NOT EXISTS api_keys (
   encrypted_key TEXT NOT NULL,
   iv            TEXT NOT NULL,
   auth_tag      TEXT NOT NULL,
+  salt          TEXT NOT NULL,
   stored_at     INTEGER NOT NULL DEFAULT (unixepoch())
 );
 

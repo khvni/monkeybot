@@ -67,7 +67,7 @@ export class GraphBuilder {
   private getNodeKey(action: string, meta?: Record<string, unknown>): string {
     if (action === "type") return `type:${meta?.keyCount ?? "batch"}`;
     if (action === "click") return `click:${meta?.button ?? "left"}`;
-    if (action === "scroll") return `scroll:${meta?.dy ?? 0 > 0 ? "down" : "up"}`;
+    if (action === "scroll") return `scroll:${((meta?.dy as number) ?? 0) > 0 ? "down" : "up"}`;
     return action;
   }
 

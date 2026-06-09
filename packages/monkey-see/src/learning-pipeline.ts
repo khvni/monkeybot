@@ -80,22 +80,46 @@ export class LearningPipeline {
     const graph = this.graphBuilder.build([trajectory]);
     this.storage.insertActionGraph(graph);
 
-    // Step 3: Generate NL summaries
-    const trajectorySummary = await this.summarizer.summarizeTrajectory(
-      trajectory,
-      workflowId
-    );
-    this.storage.insertNLSummary(trajectorySummary);
+    // Step 3: Generate NL summaries (with error recovery)
+    let workflowSummary: import("@monkeybot/storage").NLSummary;
+    try {
+      const trajectorySummary = await this.summarizer.summarizeTrajectory(
+        trajectory,
+        workflowId
+      );
+      this.storage.insertNLSummary(trajectorySummary);
 
-    const graphSummary = await this.summarizer.summarizeActionGraph(graph, workflowId);
-    this.storage.insertNLSummary(graphSummary);
+      const graphSummary = await this.summarizer.summarizeActionGraph(graph, workflowId);
+      this.storage.insertNLSummary(graphSummary);
 
-    const workflowSummary = await this.summarizer.summarizeWorkflow(
-      workflowId,
-      [trajectory],
-      [graph]
-    );
-    this.storage.insertNLSummary(workflowSummary);
+      workflowSummary = await this.summarizer.summarizeWorkflow(
+        workflowId,
+        [trajectory],
+        [graph]
+      );
+      this.storage.insertNLSummary(workflowSummary);
+    } catch (err) {
+      // On LLM failure, still mark workflow complete with trajectories/graph saved
+      this.storage.updateWorkflowStatus(workflowId, "complete");
+      const fallbackSummary = `Workflow recorded with ${trajectory.steps.length} steps (summary generation failed)`;
+      workflowSummary = {
+        id: randomUUID(),
+        workflowId,
+        targetType: "workflow",
+        targetId: workflowId,
+        summary: fallbackSummary,
+        generatedBy: "fallback",
+        createdAt: Math.floor(Date.now() / 1000),
+      };
+      this.storage.insertNLSummary(workflowSummary);
+
+      return {
+        workflowId,
+        trajectory: this.trajectoryGenerator.toResult(trajectory),
+        actionGraph: this.graphBuilder.toResult(graph),
+        summary: this.summarizer.toResult(workflowSummary),
+      };
+    }
 
     // Mark workflow as complete
     this.storage.updateWorkflowStatus(workflowId, "complete");
