@@ -55,6 +55,7 @@ export class DriverClient extends EventEmitter {
   /** Connect to the Rust driver daemon. */
   async connect(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
+      this.buffer = "";
       this.socket = createConnection(this.socketPath, () => {
         this.connected = true;
         this.reconnectAttempts = 0;
@@ -80,7 +81,7 @@ export class DriverClient extends EventEmitter {
 
         this.rejectAllPending(new Error("Connection closed"));
 
-        if (wasConnected && this.reconnectEnabled && !this.reconnecting) {
+        if (this.reconnectEnabled && (wasConnected || this.reconnecting)) {
           this.attemptReconnect();
         }
       });
@@ -181,6 +182,7 @@ export class DriverClient extends EventEmitter {
 
   private attemptReconnect(): void {
     if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+      this.reconnecting = false;
       this.emit(
         "error",
         new Error(
@@ -202,7 +204,7 @@ export class DriverClient extends EventEmitter {
 
     setTimeout(() => {
       this.connect().catch(() => {
-        /* reconnect failure handled by close event */
+        // Failure triggers socket close → close handler calls attemptReconnect again.
       });
     }, delay);
   }

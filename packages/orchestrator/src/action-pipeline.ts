@@ -153,7 +153,8 @@ export class ActionPipeline {
   /** Ask the LLM to produce an ActionPlan. */
   private async requestPlan(sessionId: string): Promise<ActionPlan> {
     const context: ChatMessage[] = this.sessions.buildContext(sessionId);
-    const taskType = this.router.classifyTask(context[context.length - 1]?.content ?? "");
+    const session = this.sessions.get(sessionId);
+    const taskType = this.router.classifyTask(session?.goal ?? "");
 
     const response = await this.router.completeWithFallback(
       { messages: context },
