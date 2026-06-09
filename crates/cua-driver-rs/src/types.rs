@@ -41,6 +41,9 @@ pub struct CuaAction {
     pub action_type: ActionType,
     pub x: Option<f64>,
     pub y: Option<f64>,
+    /// Drag destination coordinates.
+    pub end_x: Option<f64>,
+    pub end_y: Option<f64>,
     pub text: Option<String>,
     pub key: Option<String>,
     pub button: Option<MouseButton>,

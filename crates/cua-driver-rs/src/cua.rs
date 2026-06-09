@@ -152,17 +152,32 @@ fn execute_sync(
             ok_action("mouse_move")
         }
         ActionType::MouseDrag => {
-            let (x, y) = required_coords(action)?;
+            let (start_x, start_y) = required_coords(action)?;
+            let (end_x, end_y) = match (action.end_x, action.end_y) {
+                (Some(ex), Some(ey)) => (ex as i32, ey as i32),
+                _ => return Err("MouseDrag requires `end_x` and `end_y` coordinates".into()),
+            };
+            let btn = map_button(action.button.as_ref());
             enigo
-                .move_mouse(x, y, Coordinate::Abs)
-                .map_err(|e| format!("mouse_move: {e}"))?;
+                .move_mouse(start_x, start_y, Coordinate::Abs)
+                .map_err(|e| format!("mouse_move to start: {e}"))?;
+            std::thread::sleep(std::time::Duration::from_millis(10));
             enigo
-                .button(map_button(action.button.as_ref()), Direction::Press)
+                .button(btn, Direction::Press)
                 .map_err(|e| format!("mouse_down: {e}"))?;
-            let ms = action.duration.unwrap_or(200);
-            std::thread::sleep(std::time::Duration::from_millis(ms));
+            std::thread::sleep(std::time::Duration::from_millis(10));
+            let steps = action.duration.unwrap_or(10) as i32;
+            let steps = steps.max(1);
+            for i in 1..=steps {
+                let ix = start_x + (end_x - start_x) * i / steps;
+                let iy = start_y + (end_y - start_y) * i / steps;
+                enigo
+                    .move_mouse(ix, iy, Coordinate::Abs)
+                    .map_err(|e| format!("mouse_move during drag: {e}"))?;
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
             enigo
-                .button(map_button(action.button.as_ref()), Direction::Release)
+                .button(btn, Direction::Release)
                 .map_err(|e| format!("mouse_up: {e}"))?;
             ok_action("mouse_drag")
         }
@@ -377,7 +392,8 @@ fn parse_key(name: &str) -> Result<enigo::Key, String> {
         "f11" => Ok(Key::F11),
         "f12" => Ok(Key::F12),
         s if s.len() == 1 => {
-            let ch = s.chars().next().unwrap();
+            // Use the original character to preserve case (e.g. 'A' vs 'a').
+            let ch = name.chars().next().unwrap();
             Ok(Key::Unicode(ch))
         }
         other => Err(format!("Unknown key: {other}")),
@@ -395,6 +411,8 @@ mod tests {
         assert!(matches!(parse_key("tab"), Ok(enigo::Key::Tab)));
         assert!(matches!(parse_key("F1"), Ok(enigo::Key::F1)));
         assert!(matches!(parse_key("a"), Ok(enigo::Key::Unicode('a'))));
+        // Uppercase must be preserved.
+        assert!(matches!(parse_key("A"), Ok(enigo::Key::Unicode('A'))));
     }
 
     #[test]

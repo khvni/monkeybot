@@ -7,7 +7,7 @@ use tokio::net::UnixListener;
 use tokio::sync::Mutex;
 
 use crate::cua::CuaExecutor;
-use crate::safety::SafetyGuard;
+use crate::safety::{detect_active_app, SafetyGuard};
 use crate::types::{
     AllowlistPayload, ConfirmationPayload, CuaAction, DriverMessage, DriverResponse, MessageType,
 };
@@ -267,8 +267,14 @@ async fn handle_execute(
         }
     };
 
+    // Detect the active application *before* locking the safety mutex so
+    // the blocking subprocess call doesn't hold the async lock.
+    let active_app: Option<String> = tokio::task::spawn_blocking(detect_active_app)
+        .await
+        .unwrap_or(None);
+
     // Run safety validation (kill switch + allowlist + destructive check).
-    match safety.lock().await.validate(&action) {
+    match safety.lock().await.validate(&action, active_app.as_deref()) {
         Ok(None) => {
             // Safe — execute immediately.
             match executor.lock().await.execute(&action).await {

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -35,8 +35,6 @@ pub struct SafetyGuard {
     /// When false (or allowlist empty), any app is permitted.
     enforce_allowlist: bool,
     destructive_patterns: Vec<Regex>,
-    /// Pending confirmations keyed by confirmation_id.
-    pending: HashMap<String, CuaAction>,
 }
 
 impl SafetyGuard {
@@ -51,7 +49,6 @@ impl SafetyGuard {
             allowed_apps: HashSet::new(),
             enforce_allowlist: false,
             destructive_patterns: patterns,
-            pending: HashMap::new(),
         }
     }
 
@@ -100,9 +97,13 @@ impl SafetyGuard {
     /// - `Ok(None)` — action is safe, execute immediately.
     /// - `Ok(Some(request))` — action is destructive, confirmation required.
     /// - `Err(reason)` — action is blocked (kill switch, not in allowlist).
+    ///
+    /// `active_app` is the pre-detected active application name (detected
+    /// outside the mutex guard to avoid blocking the async runtime).
     pub fn validate(
-        &mut self,
+        &self,
         action: &CuaAction,
+        active_app: Option<&str>,
     ) -> Result<Option<ConfirmationRequest>, String> {
         // 1. Kill switch
         if self.is_killed() {
@@ -117,17 +118,14 @@ impl SafetyGuard {
                         "Application '{app}' is not in the allowlist"
                     ));
                 }
-            } else {
-                // No target_app supplied — try to detect the active window.
-                if let Some(active) = detect_active_app() {
-                    if !self.allowed_apps.contains(&active) {
-                        return Err(format!(
-                            "Active application '{active}' is not in the allowlist"
-                        ));
-                    }
+            } else if let Some(active) = active_app {
+                if !self.allowed_apps.contains(active) {
+                    return Err(format!(
+                        "Active application '{active}' is not in the allowlist"
+                    ));
                 }
-                // If detection fails we allow the action through (best-effort).
             }
+            // If no target_app and detection returned None, allow through (best-effort).
         }
 
         // 3. Destructive-action check
@@ -135,9 +133,6 @@ impl SafetyGuard {
             let confirmation_id = Uuid::new_v4().to_string();
             let description = describe_action(action);
             let risk = risk_level(action);
-
-            // Stash the action so we can execute it after confirmation.
-            self.pending.insert(confirmation_id.clone(), action.clone());
 
             return Ok(Some(ConfirmationRequest {
                 confirmation_required: true,
@@ -149,27 +144,6 @@ impl SafetyGuard {
         }
 
         Ok(None)
-    }
-
-    /// Resolve a pending confirmation. Returns the original action if approved.
-    #[allow(dead_code)]
-    pub fn resolve_confirmation(
-        &mut self,
-        confirmation_id: &str,
-        approved: bool,
-    ) -> Result<Option<CuaAction>, String> {
-        let action = self
-            .pending
-            .remove(confirmation_id)
-            .ok_or_else(|| format!("Unknown confirmation_id: {confirmation_id}"))?;
-
-        if approved {
-            tracing::info!(id = confirmation_id, "Destructive action approved");
-            Ok(Some(action))
-        } else {
-            tracing::info!(id = confirmation_id, "Destructive action denied");
-            Ok(None)
-        }
     }
 
     // ------------------------------------------------------------------
@@ -208,7 +182,11 @@ impl SafetyGuard {
 // ---------------------------------------------------------------------------
 
 /// Best-effort active-window detection.
-fn detect_active_app() -> Option<String> {
+///
+/// Spawns `xdotool` (Linux) or `osascript` (macOS) as a subprocess.
+/// Must be called **outside** any async mutex guard to avoid blocking
+/// the tokio runtime.
+pub fn detect_active_app() -> Option<String> {
     #[cfg(target_os = "linux")]
     {
         std::process::Command::new("xdotool")
