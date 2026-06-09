@@ -1,4 +1,4 @@
-import { ipcMain, BrowserWindow, app } from "electron";
+import { ipcMain, BrowserWindow, app, type IpcMainInvokeEvent } from "electron";
 import path from "node:path";
 import { StorageManager } from "@monkeybot/storage";
 import net from "node:net";
@@ -21,6 +21,26 @@ const DRIVER_SOCKET = process.env.MONKEYBOT_DRIVER_SOCKET
 let driverConnected = false;
 let driverSocket: net.Socket | null = null;
 let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Bullet character used for key masking — never persist values containing it. */
+const MASK_CHAR = "\u2022";
+
+function isMaskedValue(value: string): boolean {
+  return value.includes(MASK_CHAR);
+}
+
+/**
+ * Validate that an IPC event originated from the expected renderer.
+ * Rejects spoofed messages from compromised or untrusted renderer processes.
+ */
+function validateSender(
+  event: IpcMainInvokeEvent,
+  trustedId: number
+): void {
+  if (event.sender.id !== trustedId) {
+    throw new Error("IPC rejected: sender is not the trusted renderer.");
+  }
+}
 
 function connectToDriver(window: BrowserWindow): void {
   if (driverSocket) {
@@ -71,21 +91,32 @@ function sendToDriver(payload: Record<string, unknown>): boolean {
  * Register IPC handlers for communication between main and renderer processes.
  */
 export function registerIpcHandlers(window: BrowserWindow): void {
+  const trustedWebContentsId = window.webContents.id;
+
   // Attempt initial connection to the CUA driver.
   connectToDriver(window);
 
   // Onboarding: save API keys to SQLite.
+  // Guard: reject values containing mask characters to prevent overwriting
+  // real keys with display-only masked strings from get-api-keys.
   ipcMain.handle(
     "save-api-keys",
     async (
-      _event,
+      event,
       keys: { openRouter: string; assemblyAi: string; elevenLabs: string }
     ) => {
+      validateSender(event, trustedWebContentsId);
       try {
         const db = getStorage();
-        db.setApiKey("openrouter", keys.openRouter);
-        if (keys.assemblyAi) db.setApiKey("assemblyai", keys.assemblyAi);
-        if (keys.elevenLabs) db.setApiKey("elevenlabs", keys.elevenLabs);
+        if (keys.openRouter && !isMaskedValue(keys.openRouter)) {
+          db.setApiKey("openrouter", keys.openRouter);
+        }
+        if (keys.assemblyAi && !isMaskedValue(keys.assemblyAi)) {
+          db.setApiKey("assemblyai", keys.assemblyAi);
+        }
+        if (keys.elevenLabs && !isMaskedValue(keys.elevenLabs)) {
+          db.setApiKey("elevenlabs", keys.elevenLabs);
+        }
         return { success: true };
       } catch (err) {
         console.error("[IPC] Failed to save API keys:", err);
@@ -95,7 +126,8 @@ export function registerIpcHandlers(window: BrowserWindow): void {
   );
 
   // Check if onboarding is complete (OpenRouter key must exist).
-  ipcMain.handle("check-onboarding", async () => {
+  ipcMain.handle("check-onboarding", async (event) => {
+    validateSender(event, trustedWebContentsId);
     try {
       const db = getStorage();
       const key = db.getApiKey("openrouter");
@@ -105,8 +137,9 @@ export function registerIpcHandlers(window: BrowserWindow): void {
     }
   });
 
-  // Get saved API keys (masked for display).
-  ipcMain.handle("get-api-keys", async () => {
+  // Get saved API keys (masked for display only — never persist these values).
+  ipcMain.handle("get-api-keys", async (event) => {
+    validateSender(event, trustedWebContentsId);
     try {
       const db = getStorage();
       const openRouter = db.getApiKey("openrouter");
@@ -123,7 +156,8 @@ export function registerIpcHandlers(window: BrowserWindow): void {
   });
 
   // Send a text message to the agent via the CUA driver.
-  ipcMain.handle("send-message", async (_event, message: string) => {
+  ipcMain.handle("send-message", async (event, message: string) => {
+    validateSender(event, trustedWebContentsId);
     const sent = sendToDriver({ type: "user_message", content: message });
     if (sent) {
       return { response: "Message sent to agent." };
@@ -132,26 +166,30 @@ export function registerIpcHandlers(window: BrowserWindow): void {
   });
 
   // Push-to-talk: start recording.
-  ipcMain.handle("voice-start", async () => {
+  ipcMain.handle("voice-start", async (event) => {
+    validateSender(event, trustedWebContentsId);
     sendToDriver({ type: "voice_start" });
     return { success: true };
   });
 
   // Push-to-talk: stop recording.
-  ipcMain.handle("voice-stop", async () => {
+  ipcMain.handle("voice-stop", async (event) => {
+    validateSender(event, trustedWebContentsId);
     sendToDriver({ type: "voice_stop" });
     return { transcript: "" };
   });
 
   // Kill switch — halt the agent immediately.
-  ipcMain.handle("trigger-kill-switch", async () => {
+  ipcMain.handle("trigger-kill-switch", async (event) => {
+    validateSender(event, trustedWebContentsId);
     sendToDriver({ type: "kill" });
     window.webContents.send("kill-switch");
     return { success: true };
   });
 
   // Get driver connection status.
-  ipcMain.handle("get-driver-status", async () => {
+  ipcMain.handle("get-driver-status", async (event) => {
+    validateSender(event, trustedWebContentsId);
     return { connected: driverConnected };
   });
 }
