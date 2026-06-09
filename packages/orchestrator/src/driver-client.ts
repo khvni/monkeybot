@@ -52,8 +52,22 @@ export class DriverClient extends EventEmitter {
     this.requestTimeout = options.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT;
   }
 
-  /** Connect to the Rust driver daemon. */
+  /**
+   * Connect to the Rust driver daemon.
+   *
+   * Resets the reconnect-attempt budget so that a subsequent disconnect
+   * gets the full number of retries. Call this for "manual" (external)
+   * connections — the internal reconnect loop uses `establishConnection`
+   * directly so it does NOT reset the counter mid-chain.
+   */
   async connect(): Promise<void> {
+    this.reconnectAttempts = 0;
+    this.reconnecting = false;
+    return this.establishConnection();
+  }
+
+  /** Low-level socket creation shared by connect() and attemptReconnect(). */
+  private establishConnection(): Promise<void> {
     return new Promise<void>((resolve, reject) => {
       this.buffer = "";
       this.socket = createConnection(this.socketPath, () => {
@@ -203,7 +217,7 @@ export class DriverClient extends EventEmitter {
     });
 
     setTimeout(() => {
-      this.connect().catch(() => {
+      this.establishConnection().catch(() => {
         // Failure triggers socket close → close handler calls attemptReconnect again.
       });
     }, delay);

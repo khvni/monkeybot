@@ -4,10 +4,12 @@ import {
   KillSwitch,
 } from "@monkeybot/safety";
 import type {
+  AppDetector,
   PlannedAction,
   SafetyGateConfig,
   SafetyCheckResult,
 } from "./types";
+import { Mutex } from "./mutex";
 
 /**
  * Unified safety gate that checks every action against:
@@ -22,12 +24,15 @@ export class SafetyGate {
   private confirmation: ConfirmationGate;
   private actionsSinceConfirm = 0;
   private maxActionsBeforeConfirm: number;
+  private mutex = new Mutex();
+  private appDetector?: AppDetector;
 
   constructor(config: SafetyGateConfig) {
     this.killSwitch = new KillSwitch();
     this.allowlist = new AppAllowlist(config.allowedApps);
     this.confirmation = new ConfirmationGate(config.destructivePatterns);
     this.maxActionsBeforeConfirm = config.maxActionsBeforeConfirm;
+    this.appDetector = config.appDetector;
   }
 
   /** Wire up a listener so external code (Electron, CLI) can trip the switch. */
@@ -77,11 +82,20 @@ export class SafetyGate {
   /**
    * Run all safety checks for a planned action.
    *
-   * Returns `{ allowed, reason, requiresConfirmation }`.
-   * If `requiresConfirmation` is true the caller must present the confirmation
-   * dialog before proceeding.
+   * Serialised via an async mutex so that:
+   *   - The actionsSinceConfirm counter stays consistent under concurrent calls.
+   *   - Any async app-detection work (native bindings, IPC) cannot starve the
+   *     DriverClient because we never hold a synchronous lock across ticks.
    */
   async check(action: PlannedAction): Promise<SafetyCheckResult> {
+    return this.mutex.runExclusive(() => this.checkInner(action));
+  }
+
+  // -----------------------------------------------------------------------
+  // Private – actual safety logic (runs inside mutex)
+  // -----------------------------------------------------------------------
+
+  private async checkInner(action: PlannedAction): Promise<SafetyCheckResult> {
     // 1. Kill switch
     if (this.killSwitch.isTriggered) {
       return {
@@ -91,16 +105,21 @@ export class SafetyGate {
       };
     }
 
-    // 2. App allowlist
-    if (action.targetApp && !this.allowlist.isAllowed(action.targetApp)) {
+    // 2. Async app detection (non-blocking — awaits instead of sync-blocking)
+    const targetApp = this.appDetector
+      ? await this.appDetector(action)
+      : action.targetApp;
+
+    // 3. App allowlist
+    if (targetApp && !this.allowlist.isAllowed(targetApp)) {
       return {
         allowed: false,
-        reason: `App "${action.targetApp}" is not in the allowlist`,
+        reason: `App "${targetApp}" is not in the allowlist`,
         requiresConfirmation: false,
       };
     }
 
-    // 3. Destructive-action check
+    // 4. Destructive-action check
     const desc = action.description ?? action.type;
     if (this.confirmation.isDestructive(desc)) {
       const approved = await this.confirmation.requestConfirmation(
@@ -119,7 +138,7 @@ export class SafetyGate {
       return { allowed: true, requiresConfirmation: true };
     }
 
-    // 4. Action-count limit
+    // 5. Action-count limit
     this.actionsSinceConfirm++;
     if (this.actionsSinceConfirm >= this.maxActionsBeforeConfirm) {
       const approved = await this.confirmation.requestConfirmation(

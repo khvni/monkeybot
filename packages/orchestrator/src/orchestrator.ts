@@ -94,6 +94,9 @@ export class Orchestrator extends EventEmitter {
    *
    * If there is no active session, a new one is created. Otherwise the input
    * is fed into the existing session for multi-turn interaction.
+   *
+   * Concurrent calls targeting the same session are rejected — callers
+   * receive an error rather than silently interleaving actions.
    */
   async handleInput(
     input: string,
@@ -116,13 +119,25 @@ export class Orchestrator extends EventEmitter {
       sessionId = this.createSession(input, metadata);
     }
 
-    const result = await this.pipeline.run(sessionId, input);
-
-    if (result.success || !this.activeSessionId) {
-      this.activeSessionId = null;
+    // Per-session concurrency guard — reject if already processing.
+    if (this.sessions.isSessionProcessing(sessionId)) {
+      throw new Error(
+        `Session ${sessionId} is already processing — concurrent inputs are not allowed`
+      );
     }
 
-    return result;
+    this.sessions.setProcessing(sessionId, true);
+    try {
+      const result = await this.pipeline.run(sessionId, input);
+
+      if (result.success || !this.activeSessionId) {
+        this.activeSessionId = null;
+      }
+
+      return result;
+    } finally {
+      this.sessions.setProcessing(sessionId, false);
+    }
   }
 
   /** Create a new session and set it as active. */

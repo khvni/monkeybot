@@ -83,6 +83,12 @@ export interface ActionResult {
   timestamp: number;
 }
 
+/** Marker left in ActionResult.screenshotData after pruning. */
+export interface ScreenshotRef {
+  pruned: true;
+  originalSize: number;
+}
+
 /** Outcome of a full planning-execution cycle. */
 export interface PipelineResult {
   sessionId: string;
@@ -119,6 +125,8 @@ export interface TaskSession {
   iterationCount: number;
   maxIterations: number;
   metadata: Record<string, unknown>;
+  /** True while an ActionPipeline loop is running for this session. */
+  isProcessing: boolean;
 }
 
 // ---------------------------------------------------------------------------
@@ -151,11 +159,30 @@ export interface RetryOptions {
 // Safety gate types
 // ---------------------------------------------------------------------------
 
+/**
+ * Async callback for resolving the foreground app for a planned action.
+ * Return the app identifier or null if detection is unavailable.
+ */
+export type AppDetector = (action: PlannedAction) => Promise<string | null>;
+
 /** Configuration for the safety gate. */
 export interface SafetyGateConfig {
   allowedApps: string[];
   destructivePatterns: string[];
   maxActionsBeforeConfirm: number;
+  /** Optional async app detector — runs off the main loop. */
+  appDetector?: AppDetector;
+}
+
+/** Configuration for session manager. */
+export interface SessionManagerConfig {
+  maxIterations?: number;
+  /** Max action-result entries kept per session (oldest are dropped). */
+  maxActionHistory?: number;
+  /** Number of most-recent action results that retain full screenshot data. */
+  screenshotRetention?: number;
+  /** Max conversation messages kept per session. */
+  maxConversationHistory?: number;
 }
 
 /** Result of a safety check. */

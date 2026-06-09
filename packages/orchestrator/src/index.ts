@@ -5,8 +5,10 @@ export { SessionManager } from "./session-manager";
 export { SafetyGate } from "./safety-gate";
 export { Orchestrator } from "./orchestrator";
 export { withRetry } from "./retry";
+export { Mutex } from "./mutex";
 export type { RetryOptions } from "./retry";
 export type {
+  AppDetector,
   DriverMessage,
   DriverResponse,
   DriverClientOptions,
@@ -18,9 +20,11 @@ export type {
   PlannedAction,
   ActionPlan,
   ActionResult,
+  ScreenshotRef,
   PipelineResult,
   TaskSession,
   SessionStatus,
+  SessionManagerConfig,
   SafetyGateConfig,
   SafetyCheckResult,
   OrchestratorConfig,
