@@ -133,10 +133,16 @@ export class AudioPlayer {
         });
         this.currentProcess = proc;
 
-        proc.on("close", (code) => {
+        proc.on("close", (code, signal) => {
           this.currentProcess = null;
-          if (code === 0 || code === null) {
+          if (code === 0 && signal === null) {
             resolve();
+          } else if (signal) {
+            reject(
+              new PlaybackError(
+                `Playback process was terminated by signal ${signal}.`,
+              ),
+            );
           } else {
             reject(
               new PlaybackError(

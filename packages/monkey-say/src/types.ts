@@ -2,7 +2,6 @@ export interface VoiceConfig {
   assemblyAiApiKey?: string;
   elevenLabsApiKey?: string;
   elevenLabsVoiceId?: string;
-  elevenLabsModel?: string;
 }
 
 export interface TranscriptResult {

@@ -2,7 +2,7 @@ import { MicrophoneRecorder } from "./recorder";
 import { AssemblyAITranscriber } from "./assemblyai";
 import { ElevenLabsSynthesizer } from "./elevenlabs";
 import { AudioPlayer } from "./audio-player";
-import { ApiKeyMissingError, RecordingError } from "./errors";
+import { ApiKeyMissingError } from "./errors";
 import type {
   VoiceConfig,
   TranscriptResult,
@@ -58,21 +58,17 @@ export class VoiceSession {
     if (!this.config.assemblyAiApiKey) {
       throw new ApiKeyMissingError("AssemblyAI");
     }
-    if (this.recorder.isRecording) {
-      throw new RecordingError("Recording is already in progress.");
-    }
     this.recorder.start();
   }
 
   /** Stop recording and return the transcribed text. */
   async stopRecording(): Promise<string> {
-    if (!this.recorder.isRecording) {
-      throw new RecordingError("No recording in progress.");
-    }
     if (!this.transcriber) {
       throw new ApiKeyMissingError("AssemblyAI");
     }
 
+    // Delegate state checks to the recorder so async errors (stored in
+    // lastError) are surfaced rather than masked by an isRecording guard.
     const audioBuffer = await this.recorder.stop();
     const result = await this.transcriber.transcribe(audioBuffer);
     return result.text;
