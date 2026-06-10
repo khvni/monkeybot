@@ -1,46 +1,108 @@
+import { MicrophoneRecorder } from "./recorder";
 import { AssemblyAITranscriber } from "./assemblyai";
 import { ElevenLabsSynthesizer } from "./elevenlabs";
-import type { VoiceConfig, TranscriptResult } from "./types";
+import { AudioPlayer } from "./audio-player";
+import { ApiKeyMissingError } from "./errors";
+import type {
+  VoiceConfig,
+  TranscriptResult,
+  SynthesisOptions,
+} from "./types";
 
 /**
- * High-level voice session: manages STT + TTS lifecycle together.
- * Used by the Electron app's push-to-talk feature.
+ * High-level voice session: manages push-to-talk recording, STT, TTS, and
+ * audio playback as a single cohesive unit.
+ *
+ * Designed to be called from Electron IPC handlers:
+ * - `startRecording()` — begin capturing microphone audio
+ * - `stopRecording()`  — stop capture, transcribe via AssemblyAI, return text
+ * - `speak(text)`      — synthesise via ElevenLabs, queue and play audio
  */
 export class VoiceSession {
-  private transcriber: AssemblyAITranscriber;
-  private synthesizer: ElevenLabsSynthesizer;
-  private recording = false;
+  private readonly config: VoiceConfig;
+  private readonly recorder: MicrophoneRecorder;
+  private readonly player: AudioPlayer;
+  private transcriber: AssemblyAITranscriber | null = null;
+  private synthesizer: ElevenLabsSynthesizer | null = null;
+  private transcriptListeners: Array<(result: TranscriptResult) => void> = [];
 
   constructor(config: VoiceConfig) {
-    this.transcriber = new AssemblyAITranscriber(config.assemblyAiApiKey);
-    this.synthesizer = new ElevenLabsSynthesizer(
-      config.elevenLabsApiKey,
-      config.elevenLabsVoiceId
-    );
+    this.config = config;
+    this.recorder = new MicrophoneRecorder();
+    this.player = new AudioPlayer();
+
+    if (config.assemblyAiApiKey) {
+      this.transcriber = new AssemblyAITranscriber(config.assemblyAiApiKey);
+      this.transcriber.onTranscript((result) => {
+        for (const cb of this.transcriptListeners) {
+          cb(result);
+        }
+      });
+    }
+
+    if (config.elevenLabsApiKey) {
+      this.synthesizer = new ElevenLabsSynthesizer(
+        config.elevenLabsApiKey,
+        config.elevenLabsVoiceId,
+      );
+    }
   }
 
+  /** Register a listener invoked when a transcript is finalised. */
   onTranscript(cb: (result: TranscriptResult) => void): void {
-    this.transcriber.onTranscript(cb);
+    this.transcriptListeners.push(cb);
   }
 
-  /** Start listening (push-to-talk begin). */
-  async startListening(): Promise<void> {
-    this.recording = true;
-    await this.transcriber.start();
+  /** Begin capturing audio from the default microphone. */
+  async startRecording(): Promise<void> {
+    if (!this.config.assemblyAiApiKey) {
+      throw new ApiKeyMissingError("AssemblyAI");
+    }
+    this.recorder.start();
   }
 
-  /** Stop listening (push-to-talk release). */
-  async stopListening(): Promise<void> {
-    this.recording = false;
-    await this.transcriber.stop();
+  /** Stop recording and return the transcribed text. */
+  async stopRecording(): Promise<string> {
+    if (!this.transcriber) {
+      throw new ApiKeyMissingError("AssemblyAI");
+    }
+
+    // Delegate state checks to the recorder so async errors (stored in
+    // lastError) are surfaced rather than masked by an isRecording guard.
+    const audioBuffer = await this.recorder.stop();
+    const result = await this.transcriber.transcribe(audioBuffer);
+    return result.text;
   }
 
-  /** Speak a response via TTS. */
-  async speak(text: string): Promise<ArrayBuffer> {
-    return this.synthesizer.synthesize(text);
+  /** Synthesise text to speech and play back through the audio queue. */
+  async speak(text: string, options?: SynthesisOptions): Promise<void> {
+    if (!this.synthesizer) {
+      throw new ApiKeyMissingError("ElevenLabs");
+    }
+
+    const audio = await this.synthesizer.synthesize(text, options);
+    await this.player.enqueue(audio, "mp3");
+  }
+
+  /** Immediately stop audio playback and clear the queue. */
+  stopPlayback(): void {
+    this.player.stop();
   }
 
   get isRecording(): boolean {
-    return this.recording;
+    return this.recorder.isRecording;
+  }
+
+  get isPlaying(): boolean {
+    return this.player.isPlaying;
+  }
+
+  /** Release all resources held by the session. */
+  destroy(): void {
+    if (this.recorder.isRecording) {
+      this.recorder.abort();
+    }
+    this.player.stop();
+    this.transcriptListeners = [];
   }
 }
