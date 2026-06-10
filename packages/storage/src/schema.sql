@@ -2,10 +2,23 @@
 -- Hybrid learning representation: raw trajectories + action graphs + NL summaries
 
 ----------------------------------------------------------------------
+-- Workflows (top-level entity linking all representations)
+----------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS workflows (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  description TEXT,
+  status      TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'recording', 'processing', 'complete')),
+  created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
+  updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
+);
+
+----------------------------------------------------------------------
 -- Raw trajectories
 ----------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS trajectories (
   id          TEXT PRIMARY KEY,
+  workflow_id TEXT REFERENCES workflows(id) ON DELETE CASCADE,
   name        TEXT NOT NULL,
   created_at  INTEGER NOT NULL DEFAULT (unixepoch()),
   updated_at  INTEGER NOT NULL DEFAULT (unixepoch())
@@ -30,6 +43,7 @@ CREATE TABLE IF NOT EXISTS trajectory_steps (
 ----------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS action_graphs (
   id          TEXT PRIMARY KEY,
+  workflow_id TEXT REFERENCES workflows(id) ON DELETE CASCADE,
   name        TEXT NOT NULL,
   created_at  INTEGER NOT NULL DEFAULT (unixepoch())
 );
@@ -61,7 +75,8 @@ CREATE TABLE IF NOT EXISTS action_edges (
 ----------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS nl_summaries (
   id            TEXT PRIMARY KEY,
-  target_type   TEXT NOT NULL CHECK(target_type IN ('trajectory', 'action_graph')),
+  workflow_id   TEXT REFERENCES workflows(id) ON DELETE CASCADE,
+  target_type   TEXT NOT NULL CHECK(target_type IN ('trajectory', 'action_graph', 'workflow')),
   target_id     TEXT NOT NULL,
   summary       TEXT NOT NULL,
   generated_by  TEXT NOT NULL,
@@ -69,12 +84,15 @@ CREATE TABLE IF NOT EXISTS nl_summaries (
 );
 
 ----------------------------------------------------------------------
--- API key storage (onboarding)
+-- API key storage (onboarding) — encrypted at rest
 ----------------------------------------------------------------------
 CREATE TABLE IF NOT EXISTS api_keys (
-  service   TEXT PRIMARY KEY,
-  api_key   TEXT NOT NULL,
-  stored_at INTEGER NOT NULL DEFAULT (unixepoch())
+  service       TEXT PRIMARY KEY,
+  encrypted_key TEXT NOT NULL,
+  iv            TEXT NOT NULL,
+  auth_tag      TEXT NOT NULL,
+  salt          TEXT NOT NULL,
+  stored_at     INTEGER NOT NULL DEFAULT (unixepoch())
 );
 
 ----------------------------------------------------------------------
@@ -86,3 +104,12 @@ CREATE TABLE IF NOT EXISTS app_allowlist (
   allowed     INTEGER NOT NULL DEFAULT 1,
   added_at    INTEGER NOT NULL DEFAULT (unixepoch())
 );
+
+----------------------------------------------------------------------
+-- Indexes for efficient querying
+----------------------------------------------------------------------
+CREATE INDEX IF NOT EXISTS idx_trajectories_workflow ON trajectories(workflow_id);
+CREATE INDEX IF NOT EXISTS idx_action_graphs_workflow ON action_graphs(workflow_id);
+CREATE INDEX IF NOT EXISTS idx_nl_summaries_workflow ON nl_summaries(workflow_id);
+CREATE INDEX IF NOT EXISTS idx_nl_summaries_target ON nl_summaries(target_type, target_id);
+CREATE INDEX IF NOT EXISTS idx_trajectory_steps_trajectory ON trajectory_steps(trajectory_id);

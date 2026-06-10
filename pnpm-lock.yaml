@@ -63,6 +63,10 @@ importers:
         version: 5.9.3
 
   packages/monkey-see:
+    dependencies:
+      '@monkeybot/storage':
+        specifier: workspace:*
+        version: link:../storage
     devDependencies:
       typescript:
         specifier: ^5.7.0
