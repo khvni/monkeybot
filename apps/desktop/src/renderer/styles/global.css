@@ -100,6 +100,12 @@ body {
   gap: 4px;
 }
 
+.field-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
 .field-group label {
   font-size: 12px;
   font-weight: 500;
@@ -109,6 +115,22 @@ body {
 
 .field-group .required {
   color: var(--danger);
+}
+
+.toggle-visibility {
+  background: none;
+  border: none;
+  color: var(--accent);
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background var(--transition);
+}
+
+.toggle-visibility:hover {
+  background: var(--accent-dim);
 }
 
 .field-group input {
@@ -136,6 +158,15 @@ body {
 .field-hint {
   font-size: 11px;
   color: var(--text-tertiary);
+}
+
+.field-validation {
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.field-validation.warning {
+  color: var(--warning);
 }
 
 .btn-primary {
