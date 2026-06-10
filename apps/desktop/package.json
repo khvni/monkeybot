@@ -6,7 +6,8 @@
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
-    "build": "tsc --build && pnpm copy-static",
+    "build": "tsc --build && pnpm build:renderer && pnpm copy-static",
+    "build:renderer": "esbuild src/renderer/index.ts --bundle --outfile=dist/renderer/index.js --format=iife --platform=browser --target=chrome120 --sourcemap",
     "copy-static": "mkdir -p dist/renderer/styles && cp src/renderer/index.html dist/renderer/index.html && cp -r src/renderer/styles dist/renderer/",
     "dev": "pnpm build && electron .",
     "clean": "rm -rf dist out",
@@ -14,15 +15,16 @@
     "test": "echo 'No tests yet'"
   },
   "dependencies": {
+    "@monkeybot/monkey-do": "workspace:*",
     "@monkeybot/monkey-say": "workspace:*",
     "@monkeybot/monkey-see": "workspace:*",
-    "@monkeybot/monkey-do": "workspace:*",
     "@monkeybot/orchestrator": "workspace:*",
-    "@monkeybot/storage": "workspace:*",
     "@monkeybot/safety": "workspace:*",
+    "@monkeybot/storage": "workspace:*",
     "electron": "^33.0.0"
   },
   "devDependencies": {
+    "esbuild": "^0.28.0",
     "typescript": "^5.7.0"
   }
 }
