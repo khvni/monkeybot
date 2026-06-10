@@ -6,8 +6,9 @@
   "type": "module",
   "main": "dist/main/index.js",
   "scripts": {
-    "build": "tsc --build",
-    "dev": "electron .",
+    "build": "tsc --build && pnpm copy-static",
+    "copy-static": "mkdir -p dist/renderer/styles && cp src/renderer/index.html dist/renderer/index.html && cp -r src/renderer/styles dist/renderer/",
+    "dev": "pnpm build && electron .",
     "clean": "rm -rf dist out",
     "lint": "tsc --noEmit",
     "test": "echo 'No tests yet'"

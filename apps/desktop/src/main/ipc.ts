@@ -1,14 +1,34 @@
 import { ipcMain, BrowserWindow, app, type IpcMainInvokeEvent } from "electron";
 import path from "node:path";
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { randomBytes } from "node:crypto";
 import { StorageManager } from "@monkeybot/storage";
 import net from "node:net";
 
 const DB_PATH = path.join(app.getPath("userData"), "monkeybot.db");
+const KEY_PATH = path.join(app.getPath("userData"), "monkeybot.key");
+
+/**
+ * Read or generate a machine-local encryption passphrase.
+ * Stored alongside the database so API keys can be encrypted at rest.
+ */
+function getPassphrase(): string {
+  if (existsSync(KEY_PATH)) {
+    return readFileSync(KEY_PATH, "utf-8").trim();
+  }
+  const passphrase = randomBytes(32).toString("hex");
+  writeFileSync(KEY_PATH, passphrase, { mode: 0o600 });
+  return passphrase;
+}
+
 let storage: StorageManager | null = null;
 
 function getStorage(): StorageManager {
   if (!storage) {
-    storage = new StorageManager(DB_PATH);
+    storage = new StorageManager({
+      dbPath: DB_PATH,
+      encryptionPassphrase: getPassphrase(),
+    });
     storage.migrate();
   }
   return storage;
