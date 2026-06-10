@@ -1,32 +1,60 @@
 import { createTextInput } from "./TextInput";
 import { createVoiceButton } from "./VoiceButton";
+import { createKillSwitch } from "./KillSwitch";
+import { createStatusBar } from "./StatusBar";
 
 /**
- * Main chat view — messages list + text/voice input bar.
+ * Main chat view — status bar, messages, text/voice input, and kill switch.
  */
 export function renderChatView(root: HTMLElement): void {
   const container = document.createElement("div");
   container.className = "chat-area";
 
-  // Status bar
-  const statusBar = document.createElement("div");
-  statusBar.className = "status-bar";
-  statusBar.innerHTML = `
-    <span><span class="status-dot disconnected"></span>Driver: disconnected</span>
-    <span>monkeybot v0.1.0</span>
-  `;
+  // Status bar (connection indicator)
+  const statusBar = createStatusBar();
 
   // Messages area
   const messages = document.createElement("div");
   messages.className = "messages";
 
+  // Empty state
+  const emptyState = document.createElement("div");
+  emptyState.className = "empty-state";
+  emptyState.innerHTML = `
+    <div class="empty-icon">🐵</div>
+    <p>Ready to assist. Type a command or hold to talk.</p>
+  `;
+  messages.appendChild(emptyState);
+
   function addMessage(text: string, sender: "user" | "agent"): void {
+    // Remove empty state on first message
+    const empty = messages.querySelector(".empty-state");
+    if (empty) empty.remove();
+
     const msg = document.createElement("div");
     msg.className = `message ${sender}`;
-    msg.textContent = text;
+
+    const content = document.createElement("span");
+    content.className = "message-content";
+    content.textContent = text;
+    msg.appendChild(content);
+
+    const time = document.createElement("span");
+    time.className = "message-time";
+    time.textContent = new Date().toLocaleTimeString([], {
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+    msg.appendChild(time);
+
     messages.appendChild(msg);
     messages.scrollTop = messages.scrollHeight;
   }
+
+  // Kill switch (message added by onKillSwitch listener to avoid duplicates)
+  const killSwitch = createKillSwitch(async () => {
+    await window.monkeybot.triggerKillSwitch();
+  });
 
   // Input bar (text + voice)
   const inputBar = document.createElement("div");
@@ -41,33 +69,36 @@ export function renderChatView(root: HTMLElement): void {
   });
 
   const voiceBtn = createVoiceButton(async (transcript) => {
-    addMessage(transcript, "user");
-    const result = await window.monkeybot.sendMessage(transcript);
-    if (result.response) {
-      addMessage(result.response, "agent");
+    if (transcript) {
+      addMessage(transcript, "user");
+      const result = await window.monkeybot.sendMessage(transcript);
+      if (result.response) {
+        addMessage(result.response, "agent");
+      }
     }
   });
 
-  // Assemble
-  container.appendChild(statusBar);
-  container.appendChild(messages);
-
-  // Build final input row with voice button
-  const finalInputBar = document.createElement("div");
-  finalInputBar.className = "input-bar";
-
-  // Move children from textInput into finalInputBar, then add voice btn
+  // Assemble input bar
   while (textInput.firstChild) {
-    finalInputBar.appendChild(textInput.firstChild);
+    inputBar.appendChild(textInput.firstChild);
   }
   // Insert voice button before the send button
-  const sendBtn = finalInputBar.querySelector(".send-btn");
+  const sendBtn = inputBar.querySelector(".send-btn");
   if (sendBtn) {
-    finalInputBar.insertBefore(voiceBtn, sendBtn);
+    inputBar.insertBefore(voiceBtn, sendBtn);
   } else {
-    finalInputBar.appendChild(voiceBtn);
+    inputBar.appendChild(voiceBtn);
   }
 
-  container.appendChild(finalInputBar);
+  // Build layout
+  container.appendChild(statusBar);
+  container.appendChild(killSwitch);
+  container.appendChild(messages);
+  container.appendChild(inputBar);
   root.appendChild(container);
+
+  // Listen for kill switch event from main process
+  window.monkeybot.onKillSwitch(() => {
+    addMessage("⛔ Kill switch activated — agent halted.", "agent");
+  });
 }

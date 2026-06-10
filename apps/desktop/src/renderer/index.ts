@@ -1,6 +1,6 @@
 /**
  * Renderer entry point.
- * Vanilla TS for now — can be migrated to React/Svelte later.
+ * Vanilla TS — lightweight menu bar app.
  */
 
 import { renderOnboarding } from "./components/Onboarding";
@@ -15,10 +15,17 @@ declare global {
         elevenLabs: string;
       }) => Promise<{ success: boolean }>;
       checkOnboarding: () => Promise<{ complete: boolean }>;
+      getApiKeys: () => Promise<{
+        openRouter: string;
+        assemblyAi: string;
+        elevenLabs: string;
+      }>;
       sendMessage: (message: string) => Promise<{ response: string }>;
       voiceStart: () => Promise<{ success: boolean }>;
       voiceStop: () => Promise<{ transcript: string }>;
       triggerKillSwitch: () => Promise<{ success: boolean }>;
+      getDriverStatus: () => Promise<{ connected: boolean }>;
+      onDriverStatus: (cb: (connected: boolean) => void) => void;
       onWatchMeToggle: (cb: (active: boolean) => void) => void;
       onKillSwitch: (cb: () => void) => void;
     };
@@ -39,14 +46,6 @@ async function init(): Promise<void> {
   } else {
     renderChatView(root);
   }
-
-  // Listen for kill switch from main process.
-  window.monkeybot.onKillSwitch(() => {
-    const banner = document.createElement("div");
-    banner.className = "kill-banner";
-    banner.textContent = "KILL SWITCH ACTIVATED — Agent halted";
-    root.prepend(banner);
-  });
 }
 
 init();

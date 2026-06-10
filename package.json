@@ -13,14 +13,19 @@
     "build:packages": "pnpm --filter './packages/*' run build",
     "build:desktop": "pnpm --filter @monkeybot/desktop run build",
     "build:driver": "cargo build --manifest-path crates/cua-driver-rs/Cargo.toml",
-    "dev": "pnpm --filter @monkeybot/desktop run dev",
+    "dev": "pnpm build:packages && concurrently -n driver,electron -c blue,green \"pnpm dev:driver\" \"pnpm dev:desktop\"",
+    "dev:driver": "cargo run --manifest-path crates/cua-driver-rs/Cargo.toml",
+    "dev:desktop": "pnpm --filter @monkeybot/desktop run dev",
+    "postinstall": "electron-rebuild -m apps/desktop -w better-sqlite3 || true",
     "lint": "pnpm -r run lint",
     "typecheck": "tsc --build",
     "clean": "pnpm -r run clean && rm -rf node_modules",
     "test": "pnpm -r run test"
   },
   "devDependencies": {
+    "@electron/rebuild": "^3.7.0",
     "@types/node": "^25.9.2",
+    "concurrently": "^9.1.0",
     "typescript": "^5.7.0"
   },
   "license": "MIT"
